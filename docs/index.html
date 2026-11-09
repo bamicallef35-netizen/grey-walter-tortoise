@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Machina speculatrix / Benjamin Micallef</title>
+<meta name="description" content="W. Grey Walter's 1948–49 cybernetic tortoise, run in the browser by the same state machine that runs on the firmware.">
+<link rel="stylesheet" href="./style.css">
+<style>
+  #trails { pointer-events: none; }
+</style>
+</head>
+<body>
+<main>
+  <header class="site">
+    <h1>Machina speculatrix</h1>
+    <p class="meta">grey-walter-tortoise / after W. Grey Walter, 1948–49 / the controller is the firmware's state machine, held identical by a parity test / <a href="https://github.com/bamicallef35-netizen/grey-walter-tortoise">source</a> / <a href="https://benmicallef-site.vercel.app/">benmicallef</a></p>
+  </header>
+
+  <figure class="demo">
+    <div class="stage" id="stage" style="aspect-ratio: 4 / 3;">
+      <canvas id="sim" aria-label="the room, lamps, obstacles and one or two tortoises"></canvas>
+      <canvas id="trails"></canvas>
+    </div>
+    <div class="controls">
+      <div class="group" id="scenes">
+        <span class="lbl">scene</span>
+        <button data-scene="lamp" aria-pressed="true">lamp</button>
+        <button data-scene="mirror" aria-pressed="false">mirror</button>
+        <button data-scene="pair" aria-pressed="false">pair</button>
+        <button data-scene="hutch" aria-pressed="false">hutch</button>
+      </div>
+      <div class="group" id="bodies">
+        <span class="lbl">body</span>
+        <button data-body="tricycle" aria-pressed="true">1949 tricycle</button>
+        <button data-body="replica" aria-pressed="false">two-wheel replica</button>
+      </div>
+      <div class="group">
+        <span class="lbl">speed</span>
+        <input type="range" id="speed" min="0.25" max="4" step="0.25" value="1.5">
+        <span class="lbl" id="speedVal">1.5×</span>
+      </div>
+      <div class="group">
+        <button id="trailsToggle" aria-pressed="true">trails</button>
+        <button id="playPause" aria-pressed="true">running</button>
+        <button id="reset" aria-pressed="false">reset</button>
+      </div>
+    </div>
+    <pre class="readout" id="readout"></pre>
+    <figcaption>tap the room to place a lamp. blue marks the pilot lamp while it is lit — the trace Walter's open-shutter photographs recorded.</figcaption>
+  </figure>
+
+  <section class="text">
+    <p>Between 1948 and 1949, at the Burden Neurological Institute in Bristol, Grey Walter built two small robots to argue a point about brains: that behaviour an observer reads as purposeful needs very few components, provided they sit in a tight feedback loop with the world. Each tortoise had one photocell on a scanning column, one shell that closed a contact when touched, a drive motor, a steering motor, and two valves. From that it sought moderate light, turned away from strong light, butted its way around obstacles, danced in front of a mirror when it caught its own pilot lamp, and went home to a lit hutch when its battery ran low.</p>
+    <p>The controller running the bodies above is a line-for-line port of the C++ model in the firmware. A parity harness feeds identical input sequences to both and asserts they agree tick for tick, so what you see is what the microcontroller does.</p>
+    <h2>modes</h2>
+    <ul class="text-list">
+      <li><strong>scan</strong> — darkness. Steering turns continuously, drive at half speed, pilot lamp on.</li>
+      <li><strong>glimpse</strong> — a faint rise in light pauses the scan for a moment.</li>
+      <li><strong>lock</strong> — moderate light. Steering stops; full drive toward it; pilot off.</li>
+      <li><strong>dazzle</strong> — strong light. Steering restarts at half effort: a swerve away.</li>
+      <li><strong>contact</strong> — the shell is pushed. The amplifier free-runs and the motors alternate push and steer until the body is clear.</li>
+      <li><strong>docked</strong> — on the hutch charger with a flat battery; rests until charged.</li>
+    </ul>
+    <p>The dazzle threshold rides on battery voltage, so a tired tortoise is drawn to the bright hutch it avoided when charged. A pilot lamp lit only while scanning is why two tortoises, or a mirror, produce the halting dance of mutual recognition.</p>
+    <h2>the explorer adaptation</h2>
+    <p>Walter's front wheel carried the photocell, so scanning and travelling happened together. A two-wheel body with a fixed photocell scans by turning on the spot and goes nowhere; the replica therefore adds a short straight run after each full scan. It is labelled as an adaptation, it is off for the 1949 body, and it leaves the light and contact logic untouched.</p>
+    <p class="meta">1,115 host unit checks / 14,179 parity checks / MIT / <a href="https://github.com/bamicallef35-netizen/grey-walter-tortoise">README and firmware</a></p>
+  </section>
+</main>
+
+<script src="./speculatrix.js"></script>
+<script>
+(function () {
+  "use strict";
+  var S = window.Speculatrix, Mode = S.Mode, BODY_R = S.BODY_R;
+  var sim = document.getElementById("sim"), trails = document.getElementById("trails");
+  var sctx = sim.getContext("2d"), tctx = trails.getContext("2d");
+  var stage = document.getElementById("stage"), readout = document.getElementById("readout");
+  var css = getComputedStyle(document.documentElement);
+  var INK = css.getPropertyValue("--ink").trim() || "#111", INK2 = css.getPropertyValue("--ink-2").trim() || "#6b6b6b";
+  var RULE = css.getPropertyValue("--rule").trim() || "#d4d4d4", PAPER2 = css.getPropertyValue("--paper-2").trim() || "#f4f4f4";
+  var ACCENT = css.getPropertyValue("--accent").trim() || "#0000ee";
+  var FONT = "12px " + getComputedStyle(document.body).fontFamily;
+
+  var state = { scene: "lamp", body: "tricycle", speed: 1.5, trails: true, running: true };
+  var world = null, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  var view = { s: 1, ox: 0, oy: 0, W: 0, H: 0 };
+
+  function buildWorld() {
+    world = S.scenes[state.scene]();
+    for (var i = 0; i < world.agents.length; i++) world.agents[i].body = state.body;
+    clearTrails();
+  }
+  function fit() {
+    var r = stage.getBoundingClientRect();
+    view.W = r.width; view.H = r.height;
+    [sim, trails].forEach(function (c) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); });
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0); tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    clearTrails();
+  }
+  function computeView() {
+    var pad = 16, s = Math.min((view.W - 2 * pad) / world.w, (view.H - 2 * pad) / world.h);
+    view.s = s; view.ox = (view.W - world.w * s) / 2; view.oy = (view.H - world.h * s) / 2;
+  }
+  function sx(x) { return view.ox + x * view.s; }
+  function sy(y) { return view.oy + y * view.s; }
+  function toWorld(cx, cy) { return { x: (cx - view.ox) / view.s, y: (cy - view.oy) / view.s }; }
+  function clearTrails() { tctx.save(); tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.clearRect(0, 0, trails.width, trails.height); tctx.restore(); }
+
+  function drawRoom() {
+    sctx.clearRect(0, 0, view.W, view.H);
+    computeView();
+    sctx.strokeStyle = RULE; sctx.lineWidth = 1;
+    sctx.strokeRect(sx(0) + 0.5, sy(0) + 0.5, world.w * view.s, world.h * view.s);
+  }
+  function drawLamp(l) {
+    var cx = sx(l.x), cy = sy(l.y), r = Math.max(3, 0.03 * view.s);
+    sctx.strokeStyle = INK2; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.arc(cx, cy, r * 3.2 * Math.sqrt(l.power), 0, 7); sctx.stroke();
+    sctx.fillStyle = INK; sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.fill();
+  }
+  function drawHutch(hc) {
+    var cx = sx(hc.x), cy = sy(hc.y), r = hc.r * view.s;
+    sctx.strokeStyle = INK2; sctx.lineWidth = 1; sctx.setLineDash([4, 4]);
+    sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.stroke(); sctx.setLineDash([]);
+    sctx.fillStyle = INK; sctx.beginPath(); sctx.arc(cx, cy, 3, 0, 7); sctx.fill();
+    sctx.fillStyle = INK2; sctx.font = FONT; sctx.textAlign = "center"; sctx.fillText("hutch", cx, cy - r - 5); sctx.textAlign = "start";
+  }
+  function drawObstacle(o) {
+    var cx = sx(o.x), cy = sy(o.y), r = o.r * view.s;
+    sctx.fillStyle = PAPER2; sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.fill();
+    sctx.strokeStyle = RULE; sctx.lineWidth = 1; sctx.stroke();
+  }
+  function drawMirror(m) {
+    sctx.strokeStyle = INK; sctx.lineWidth = 2; sctx.lineCap = "butt";
+    sctx.beginPath(); sctx.moveTo(sx(m.ax), sy(m.ay)); sctx.lineTo(sx(m.bx), sy(m.by)); sctx.stroke();
+  }
+  function drawAgent(a) {
+    var cx = sx(a.x), cy = sy(a.y), r = BODY_R * view.s, dir = a.eyeDir();
+    sctx.strokeStyle = INK; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.stroke();
+    sctx.beginPath(); sctx.moveTo(cx, cy); sctx.lineTo(cx + Math.cos(dir) * r * 1.5, cy + Math.sin(dir) * r * 1.5); sctx.stroke();
+    if (a.out.pilot) { sctx.fillStyle = ACCENT; sctx.beginPath(); sctx.arc(cx, cy, Math.max(2.5, r * 0.3), 0, 7); sctx.fill(); }
+    sctx.fillStyle = INK2; sctx.font = FONT; sctx.textAlign = "center"; sctx.fillText(a.name.toLowerCase(), cx, cy - r - 5); sctx.textAlign = "start";
+  }
+  function paintTrails() {
+    if (!state.trails) return;
+    for (var i = 0; i < world.agents.length; i++) {
+      var a = world.agents[i], cx = sx(a.x), cy = sy(a.y);
+      tctx.fillStyle = "rgba(17,17,17,0.05)"; tctx.beginPath(); tctx.arc(cx, cy, 1.2, 0, 7); tctx.fill();
+      if (a.out.pilot) { tctx.fillStyle = "rgba(0,0,238,0.32)"; tctx.beginPath(); tctx.arc(cx, cy, 1.6, 0, 7); tctx.fill(); }
+    }
+  }
+  function pad(s, n) { s = String(s); while (s.length < n) s += " "; return s; }
+  function updateReadout() {
+    var lines = [];
+    for (var i = 0; i < world.agents.length; i++) {
+      var a = world.agents[i];
+      lines.push(
+        pad(a.name.toLowerCase() + " / " + (a.body === "tricycle" ? "tricycle" : "replica"), 18) +
+        pad(a.out.mode, 9) +
+        pad("light " + (a.light * 100).toFixed(0) + "%", 12) +
+        pad("dazzle " + a.brain.dazzleThreshold(a.battery).toFixed(2), 13) +
+        pad("battery " + a.battery.toFixed(2) + " V (" + (a.brain.charge(a.battery) * 100).toFixed(0) + "%)", 24) +
+        "pilot " + (a.out.pilot ? "on" : "off")
+      );
+    }
+    readout.textContent = lines.join("\n");
+  }
+
+  var last = 0;
+  function frame(now) {
+    if (!last) last = now;
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (state.running) {
+      var simDt = dt * state.speed;
+      while (simDt > 1e-4) { var h = Math.min(0.02, simDt); world.step(h); simDt -= h; paintTrails(); }
+    }
+    drawRoom();
+    if (world.mirror) drawMirror(world.mirror);
+    world.obstacles.forEach(drawObstacle);
+    if (world.hutch) drawHutch(world.hutch);
+    world.lamps.forEach(drawLamp);
+    world.agents.forEach(drawAgent);
+    updateReadout();
+    requestAnimationFrame(frame);
+  }
+
+  function press(container, key, value) {
+    container.querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset[key] === value ? "true" : "false"); });
+  }
+  document.getElementById("scenes").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.scene = b.dataset.scene; press(e.currentTarget, "scene", state.scene); buildWorld();
+  });
+  document.getElementById("bodies").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.body = b.dataset.body; press(e.currentTarget, "body", state.body);
+    for (var i = 0; i < world.agents.length; i++) world.agents[i].body = state.body;
+    clearTrails();
+  });
+  var speed = document.getElementById("speed"), speedVal = document.getElementById("speedVal");
+  speed.addEventListener("input", function () { state.speed = parseFloat(speed.value); speedVal.textContent = state.speed.toFixed(2).replace(/\.?0+$/, "") + "×"; });
+  var trailsToggle = document.getElementById("trailsToggle");
+  trailsToggle.addEventListener("click", function () {
+    state.trails = !state.trails; trailsToggle.setAttribute("aria-pressed", String(state.trails));
+    trails.style.display = state.trails ? "block" : "none"; if (!state.trails) clearTrails();
+  });
+  var playPause = document.getElementById("playPause");
+  playPause.addEventListener("click", function () {
+    state.running = !state.running; playPause.setAttribute("aria-pressed", String(state.running));
+    playPause.textContent = state.running ? "running" : "paused";
+  });
+  document.getElementById("reset").addEventListener("click", buildWorld);
+  stage.addEventListener("pointerdown", function (e) {
+    var r = stage.getBoundingClientRect(), p = toWorld(e.clientX - r.left, e.clientY - r.top);
+    if (p.x < 0.05 || p.x > world.w - 0.05 || p.y < 0.05 || p.y > world.h - 0.05) return;
+    world.lamps.push({ x: p.x, y: p.y, power: 1 });
+  });
+  window.addEventListener("resize", fit);
+  buildWorld(); fit(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

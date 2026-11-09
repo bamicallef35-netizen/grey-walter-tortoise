@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  model:
+    name: model (tests + parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Host unit tests
+        run: make test
+      - name: Syntax-check the sketch against a stub Arduino API
+        run: make sketch
+      - name: Parity — firmware model vs browser model
+        run: make parity
+
+  sketch:
+    name: compile sketch (arduino:avr:nano)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile tortoise.ino for the Arduino Nano
+        uses: arduino/compile-sketches@v1
+        with:
+          fqbn: arduino:avr:nano
+          sketch-paths: |
+            firmware/tortoise
