@@ -163,7 +163,7 @@
   // Half-width of the photocell's view: the angle at which its shroud
   // passes half the light (cos^n = 1/2).
   var VIEW_HALF = Math.acos(Math.pow(0.5, 1 / S.FOV_POW));
-  function drawAgent(a) {
+  function drawAgent(a, i) {
     var cx = sx(a.x), cy = sy(a.y), r = BODY_R * view.s, dir = a.eyeDir(), mode = a.out.mode;
     // What the photocell is looking at.
     sctx.save();
@@ -192,7 +192,10 @@
       sctx.beginPath(); sctx.arc(cx, cy, Math.max(2.5, r * 0.28), 0, 7); sctx.stroke();
     }
     // Name and what it is doing.
-    var ty = cy - r - 7 < sy(0) + 12 ? cy + r + 15 : cy - r - 7;
+    // When two tortoises meet, the second one's name goes underneath.
+    var near = world.agents.some(function (b) { return b !== a && Math.hypot(b.x - a.x, b.y - a.y) < BODY_R * 5; });
+    var below = (near && i % 2 === 1) || cy - r - 7 < sy(0) + 12;
+    var ty = below ? cy + r + 15 : cy - r - 7;
     sctx.font = FONT; sctx.textAlign = "center";
     sctx.fillStyle = INK; sctx.fillText(a.name.toLowerCase() + " · " + mode, cx, ty);
     sctx.textAlign = "start";
