@@ -14,7 +14,7 @@
   var ACCENT = css.getPropertyValue("--accent").trim() || "#0000ee";
   var FONT = "12px " + getComputedStyle(document.body).fontFamily;
 
-  var state = { scene: "lamp", body: "tricycle", speed: 1.5, trails: true, running: true };
+  var state = { scene: "lamp", body: "tricycle", speed: 1.5, trails: true, running: true, tool: "lamp" };
   var world = null, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
   var view = { s: 1, ox: 0, oy: 0, W: 0, H: 0 };
 
@@ -278,7 +278,7 @@
     var dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (state.running) {
       var simDt = dt * state.speed;
-      while (simDt > 1e-4) { var h = Math.min(0.02, simDt); world.step(h); simDt -= h; paintTrails(); }
+      while (simDt > 1e-4) { var h = Math.min(0.02, simDt); world.step(h); simDt -= h; if (drag && drag.kind === "agent" && drag.p) moveTo(drag, drag.p); paintTrails(); }
     }
     drawRoom();
     if (field.dirty) { sampleField(); paintField(); field.dirty = false; }
@@ -319,12 +319,66 @@
     playPause.textContent = state.running ? "running" : "paused";
   });
   document.getElementById("reset").addEventListener("click", buildWorld);
-  stage.addEventListener("pointerdown", function (e) {
-    var r = stage.getBoundingClientRect(), p = toWorld(e.clientX - r.left, e.clientY - r.top);
-    if (p.x < 0.05 || p.x > world.w - 0.05 || p.y < 0.05 || p.y > world.h - 0.05) return;
-    world.lamps.push({ x: p.x, y: p.y, power: 1 });
-    field.dirty = true;
+
+  // ── Editing the room ──────────────────────────────────────────────────
+  // Press on a tortoise, lamp, block or the hutch to drag it. Press on
+  // empty floor to add whatever the "tap" control is set to; with erase
+  // set, pressing a lamp or block removes it.
+  var drag = null;
+  document.getElementById("tools").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.tool = b.dataset.tool; press(e.currentTarget, "tool", state.tool);
   });
+  function pointerToWorld(e) {
+    var r = stage.getBoundingClientRect();
+    return toWorld(e.clientX - r.left, e.clientY - r.top);
+  }
+  function inRoom(p) { return p.x > 0.05 && p.x < world.w - 0.05 && p.y > 0.05 && p.y < world.h - 0.05; }
+  function hitTest(p) {
+    var best = null, bestD = Infinity, touch = 22 / view.s;   // at least 22 px to aim at
+    function consider(kind, list, item, x, y, r) {
+      var d = Math.hypot(p.x - x, p.y - y);
+      if (d < Math.max(r, touch) && d < bestD) { best = { kind: kind, list: list, item: item }; bestD = d; }
+    }
+    world.agents.forEach(function (a) { consider("agent", world.agents, a, a.x, a.y, BODY_R * 1.3); });
+    world.lamps.forEach(function (l) { consider("lamp", world.lamps, l, l.x, l.y, 0.14); });
+    world.obstacles.forEach(function (o) { consider("block", world.obstacles, o, o.x, o.y, o.r + 0.03); });
+    if (world.hutch) consider("hutch", null, world.hutch, world.hutch.x, world.hutch.y, world.hutch.r);
+    return best;
+  }
+  function moveTo(hit, p) {
+    hit.p = p;
+    hit.item.x = Math.max(0.05, Math.min(world.w - 0.05, p.x));
+    hit.item.y = Math.max(0.05, Math.min(world.h - 0.05, p.y));
+    if (hit.kind === "agent") lastPos.delete(hit.item);   // no trail streak across the room
+    else field.dirty = true;
+  }
+  stage.addEventListener("pointerdown", function (e) {
+    var p = pointerToWorld(e);
+    if (!inRoom(p)) return;
+    var hit = hitTest(p);
+    if (state.tool === "erase") {
+      if (hit && hit.list && hit.kind !== "agent") { hit.list.splice(hit.list.indexOf(hit.item), 1); field.dirty = true; }
+      return;
+    }
+    if (!hit) {
+      var item = state.tool === "block" ? { x: p.x, y: p.y, r: 0.18 } : { x: p.x, y: p.y, power: 1 };
+      var list = state.tool === "block" ? world.obstacles : world.lamps;
+      list.push(item); field.dirty = true;
+      hit = { kind: state.tool, list: list, item: item };
+    }
+    drag = hit; drag.p = hit.kind === "agent" ? { x: hit.item.x, y: hit.item.y } : null;
+    stage.setPointerCapture(e.pointerId);
+    stage.style.cursor = "grabbing";
+  });
+  stage.addEventListener("pointermove", function (e) {
+    var p = pointerToWorld(e);
+    if (drag) { moveTo(drag, p); return; }
+    if (e.pointerType === "mouse") stage.style.cursor = hitTest(p) ? (state.tool === "erase" ? "pointer" : "grab") : (state.tool === "erase" ? "default" : "crosshair");
+  });
+  function endDrag() { drag = null; stage.style.cursor = ""; }
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
   window.addEventListener("resize", fit);
   buildWorld(); fit(); requestAnimationFrame(frame);
 })();
