@@ -1,4 +1,4 @@
-// demo.js — the page around the model: drawing, controls, readout.
+// demo.js — the page around the model: drawing, controls, status panel.
 // The model itself lives in speculatrix.js and is shared with the tools.
 
 (function () {
@@ -6,7 +6,7 @@
   var S = window.Speculatrix, Mode = S.Mode, BODY_R = S.BODY_R;
   var sim = document.getElementById("sim"), trails = document.getElementById("trails");
   var sctx = sim.getContext("2d"), tctx = trails.getContext("2d");
-  var stage = document.getElementById("stage"), readout = document.getElementById("readout");
+  var stage = document.getElementById("stage"), statusEl = document.getElementById("status");
   var css = getComputedStyle(document.documentElement);
   var INK = css.getPropertyValue("--ink").trim() || "#111", INK2 = css.getPropertyValue("--ink-2").trim() || "#6b6b6b";
   var RULE = css.getPropertyValue("--rule").trim() || "#d4d4d4", PAPER2 = css.getPropertyValue("--paper-2").trim() || "#f4f4f4";
@@ -29,6 +29,7 @@
     for (var i = 0; i < world.agents.length; i++) world.agents[i].body = state.body;
     field.dirty = true;
     clearTrails();
+    buildStatus();
   }
   // Size the canvases to the stage. Phones fire resize events while
   // scrolling (the address bar comes and goes), so nothing happens unless
@@ -214,21 +215,61 @@
     }
     tctx.globalAlpha = 1;
   }
-  function pad(s, n) { s = String(s); while (s.length < n) s += " "; return s; }
-  function updateReadout() {
-    var lines = [];
-    for (var i = 0; i < world.agents.length; i++) {
-      var a = world.agents[i];
-      lines.push(
-        pad(a.name.toLowerCase() + " / " + (a.body === "tricycle" ? "tricycle" : "replica"), 18) +
-        pad(a.out.mode, 9) +
-        pad("light " + (a.light * 100).toFixed(0) + "%", 12) +
-        pad("dazzle " + a.brain.dazzleThreshold(a.battery).toFixed(2), 13) +
-        pad("battery " + a.battery.toFixed(2) + " V (" + (a.brain.charge(a.battery) * 100).toFixed(0) + "%)", 24) +
-        "pilot " + (a.out.pilot ? "on" : "off")
-      );
-    }
-    readout.textContent = lines.join("\n");
+  // ── Status panel ──────────────────────────────────────────────────────
+  // One block per tortoise: the six modes with the current one marked, a
+  // line saying what that mode means, and gauges for light and battery.
+  // The light gauge carries the lock and dazzle thresholds as ticks, so
+  // the reason for each change of mode can be read off it.
+  var MODES = [Mode.Scan, Mode.Glimpse, Mode.Lock, Mode.Dazzle, Mode.Contact, Mode.Docked];
+  var WHY = {};
+  WHY[Mode.Scan] = "Dark. It sweeps the photocell round, looking for light. Pilot lamp on.";
+  WHY[Mode.Glimpse] = "A faint rise in light. The sweep pauses to see if it holds.";
+  WHY[Mode.Lock] = "Moderate light. Steering stops and it drives straight at the source.";
+  WHY[Mode.Dazzle] = "Too bright. Steering restarts so it swerves away from the glare.";
+  WHY[Mode.Contact] = "Shell pushed. It alternates pushing and steering to work round the obstacle, ignoring light.";
+  WHY[Mode.Docked] = "On the charger with a flat battery. It rests until charged.";
+  var RUN = "Dark. A short straight run between sweeps (the two-wheel adaptation, see below).";
+  var panels = [], lastStatus = 0;
+
+  function buildStatus() {
+    statusEl.innerHTML = ""; panels = [];
+    world.agents.forEach(function (a) {
+      var el = document.createElement("div");
+      el.className = "tortoise";
+      el.innerHTML =
+        '<div class="who"></div>' +
+        '<div class="modes">' + MODES.map(function (m) { return '<span data-m="' + m + '">' + m + '</span>'; }).join("") + '</div>' +
+        '<p class="why"></p>' +
+        '<div class="gauge"><span class="lbl">light</span><span class="bar wide"><i></i><b class="tick" data-label="lock"></b><b class="tick" data-label="dazzle"></b></span><span class="val"></span></div>' +
+        '<div class="gauge"><span class="lbl">battery</span><span class="bar wide"><i></i></span><span class="val"></span></div>';
+      statusEl.appendChild(el);
+      var bars = el.querySelectorAll(".bar > i"), vals = el.querySelectorAll(".val"), ticks = el.querySelectorAll(".tick");
+      panels.push({ a: a, who: el.querySelector(".who"), chips: el.querySelectorAll(".modes span"), why: el.querySelector(".why"),
+        light: bars[0], lightVal: vals[0], lock: ticks[0], dazzle: ticks[1], batt: bars[1], battVal: vals[1], key: "" });
+    });
+    lastStatus = 0;
+  }
+  function updateStatus(now) {
+    if (now - lastStatus < 100) return;   // ten times a second is plenty to read
+    lastStatus = now;
+    panels.forEach(function (p) {
+      var a = p.a, mode = a.out.mode, run = a.body === "replica" && mode === Mode.Scan && a.explorer.runLeft > 0;
+      var who = a.name.toLowerCase() + " / " + (a.body === "tricycle" ? "1949 tricycle" : "two-wheel replica");
+      var key = who + mode + run;
+      if (key !== p.key) {
+        p.key = key; p.who.textContent = who;
+        p.chips.forEach(function (c) { c.className = c.dataset.m === mode ? "on" : ""; });
+        p.why.textContent = run ? RUN : WHY[mode];
+      }
+      var dz = a.brain.dazzleThreshold(a.battery), charge = a.brain.charge(a.battery);
+      p.light.style.width = (a.light * 100).toFixed(1) + "%";
+      p.lightVal.textContent = (a.light * 100).toFixed(0) + "%";
+      p.lock.style.left = (a.brain.p.lock_level * 100) + "%";
+      p.dazzle.style.left = (Math.min(dz, 1) * 100).toFixed(1) + "%";
+      p.dazzle.style.display = dz < 1 ? "" : "none";
+      p.batt.style.width = (charge * 100).toFixed(1) + "%";
+      p.battVal.textContent = (charge * 100).toFixed(0) + "% · " + a.battery.toFixed(2) + " V";
+    });
   }
 
   var last = 0;
@@ -248,7 +289,7 @@
     if (world.hutch) drawHutch(world.hutch);
     world.lamps.forEach(drawLamp);
     world.agents.forEach(drawAgent);
-    updateReadout();
+    updateStatus(now);
     requestAnimationFrame(frame);
   }
 
