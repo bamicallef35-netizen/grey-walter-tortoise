@@ -22,6 +22,7 @@
   // only changes when a lamp moves, so it is drawn once into its own canvas.
   var fieldLayer = document.createElement("canvas"), fctx = fieldLayer.getContext("2d");
   var field = { dirty: true, cols: 0, rows: 0, v: null };
+  var lastPos = new Map();   // each tortoise's last screen position, for the trails
 
   function buildWorld() {
     world = S.scenes[state.scene]();
@@ -29,13 +30,23 @@
     field.dirty = true;
     clearTrails();
   }
+  // Size the canvases to the stage. Phones fire resize events while
+  // scrolling (the address bar comes and goes), so nothing happens unless
+  // the stage itself changed size, and the trails drawn so far are kept.
   function fit() {
     var r = stage.getBoundingClientRect();
+    if (Math.round(r.width) === Math.round(view.W) && Math.round(r.height) === Math.round(view.H)) return;
+    var old = null;
+    if (trails.width && trails.height) {
+      old = document.createElement("canvas"); old.width = trails.width; old.height = trails.height;
+      old.getContext("2d").drawImage(trails, 0, 0);
+    }
     view.W = r.width; view.H = r.height;
     [sim, trails, fieldLayer].forEach(function (c) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); });
     sctx.setTransform(dpr, 0, 0, dpr, 0, 0); tctx.setTransform(dpr, 0, 0, dpr, 0, 0); fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     field.dirty = true;
-    clearTrails();
+    lastPos.clear();
+    if (old) tctx.drawImage(old, 0, 0, view.W, view.H);
   }
   function computeView() {
     var pad = 16, s = Math.min((view.W - 2 * pad) / world.w, (view.H - 2 * pad) / world.h);
@@ -44,7 +55,7 @@
   function sx(x) { return view.ox + x * view.s; }
   function sy(y) { return view.oy + y * view.s; }
   function toWorld(cx, cy) { return { x: (cx - view.ox) / view.s, y: (cy - view.oy) / view.s }; }
-  function clearTrails() { tctx.save(); tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.clearRect(0, 0, trails.width, trails.height); tctx.restore(); }
+  function clearTrails() { lastPos.clear(); tctx.save(); tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.clearRect(0, 0, trails.width, trails.height); tctx.restore(); }
 
   function drawRoom() {
     sctx.clearRect(0, 0, view.W, view.H);
@@ -185,13 +196,23 @@
     sctx.fillStyle = INK; sctx.fillText(a.name.toLowerCase() + " · " + mode, cx, ty);
     sctx.textAlign = "start";
   }
+  // Open-shutter trails, as in Walter's photographs: a fine line for the
+  // path, a broad blue stroke wherever the pilot lamp was lit.
   function paintTrails() {
     if (!state.trails) return;
+    tctx.lineCap = "round";
     for (var i = 0; i < world.agents.length; i++) {
-      var a = world.agents[i], cx = sx(a.x), cy = sy(a.y);
-      tctx.fillStyle = "rgba(17,17,17,0.05)"; tctx.beginPath(); tctx.arc(cx, cy, 1.2, 0, 7); tctx.fill();
-      if (a.out.pilot) { tctx.fillStyle = "rgba(0,0,238,0.32)"; tctx.beginPath(); tctx.arc(cx, cy, 1.6, 0, 7); tctx.fill(); }
+      var a = world.agents[i], cx = sx(a.x), cy = sy(a.y), p = lastPos.get(a);
+      lastPos.set(a, { x: cx, y: cy });
+      if (!p || Math.abs(p.x - cx) + Math.abs(p.y - cy) > 30) continue;   // a jump, e.g. after a drag
+      if (a.out.pilot) {
+        tctx.strokeStyle = ACCENT; tctx.globalAlpha = 0.14; tctx.lineWidth = 3.5;
+        tctx.beginPath(); tctx.moveTo(p.x, p.y); tctx.lineTo(cx, cy); tctx.stroke();
+      }
+      tctx.strokeStyle = INK; tctx.globalAlpha = 0.35; tctx.lineWidth = 0.8;
+      tctx.beginPath(); tctx.moveTo(p.x, p.y); tctx.lineTo(cx, cy); tctx.stroke();
     }
+    tctx.globalAlpha = 1;
   }
   function pad(s, n) { s = String(s); while (s.length < n) s += " "; return s; }
   function updateReadout() {
