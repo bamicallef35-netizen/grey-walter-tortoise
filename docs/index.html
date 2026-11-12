@@ -6,6 +6,7 @@
 <title>Machina speculatrix / Benjamin Micallef</title>
 <meta name="description" content="W. Grey Walter's 1948–49 cybernetic tortoise, run in the browser by the same state machine that runs on the firmware.">
 <link rel="stylesheet" href="./style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.5' fill='white' stroke='%23111' stroke-width='1.5'/%3E%3Ccircle cx='8' cy='8' r='2.5' fill='%230000ee'/%3E%3C/svg%3E">
 <style>
   #trails { pointer-events: none; }
   /* status panel: one block per tortoise */
@@ -17,12 +18,16 @@
   .tortoise .modes span { border: var(--hair) solid var(--rule); color: var(--ink-3); padding: 0 6px; }
   .tortoise .modes span.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
   .tortoise .why { margin: 0 0 var(--s-3); min-height: 3em; max-width: 52ch; }
-  .tortoise .gauge { display: grid; grid-template-columns: 8ch minmax(0, 1fr) 15ch; align-items: center; gap: var(--s-2); padding-top: 14px; }
+  .tortoise .gauge { display: grid; grid-template-columns: 8ch minmax(0, 360px) 15ch; align-items: center; gap: var(--s-2); padding-top: 14px; }
   .tortoise .gauge .lbl { color: var(--ink-2); }
   .tortoise .gauge .val { font-variant-numeric: tabular-nums; }
   .bar.wide { width: 100%; margin: 0; }
   .bar .tick { position: absolute; top: -4px; bottom: -4px; width: 1px; background: var(--ink); }
   .bar .tick::after { content: attr(data-label); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-size: 10px; line-height: 1.2; color: var(--ink-2); font-weight: 400; }
+  header.site .lede { max-width: var(--measure); margin: var(--s-2) 0 var(--s-3); }
+  .key { list-style: none; margin: 0; padding: var(--s-2) var(--s-3); border-top: var(--hair) solid var(--rule); display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-1) var(--s-4); font-size: var(--fs-0); color: var(--ink-2); line-height: 1.5; }
+  .key li { display: flex; align-items: baseline; gap: var(--s-2); }
+  .key svg { flex: none; width: 20px; height: 14px; position: relative; top: 2px; }
   @media (max-width: 640px) { .tortoise + .tortoise { border-left: 0; border-top: var(--hair) solid var(--rule); } }
 </style>
 </head>
@@ -30,6 +35,7 @@
 <main>
   <header class="site">
     <h1>Machina speculatrix</h1>
+    <p class="lede">A 1949 robot that seeks light, shies from glare and finds its way home to recharge, with two valves for a brain. The tortoise below runs the same state machine as the firmware in this repository.</p>
     <p class="meta">grey-walter-tortoise / after W. Grey Walter, 1948–49 / the controller is the firmware's state machine, held identical by a parity test / <a href="https://github.com/bamicallef35-netizen/grey-walter-tortoise">source</a> / <a href="https://benmicallef-site.vercel.app/">benmicallef</a></p>
   </header>
 
@@ -69,6 +75,14 @@
       </div>
     </div>
     <div class="status" id="status"></div>
+    <ul class="key" aria-label="key to the drawing">
+      <li><svg viewBox="0 0 20 14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="#fff" stroke="#111"/><circle cx="7" cy="7" r="2.2" fill="#0000ee"/><line x1="7" y1="7" x2="18" y2="4" stroke="#111" stroke-width="1.5"/></svg>shell, photocell on its column, pilot lamp lit</li>
+      <li><svg viewBox="0 0 20 14" aria-hidden="true"><path d="M2 12 L18 2 L18 12 Z" fill="#111" fill-opacity=".09"/></svg>what the photocell can see</li>
+      <li><svg viewBox="0 0 20 14" aria-hidden="true"><g fill="#111" fill-opacity=".2"><circle cx="3" cy="7" r="1"/><circle cx="8" cy="7" r="1.6"/><circle cx="13" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.8"/></g></svg>how bright the room is</li>
+      <li><svg viewBox="0 0 20 14" aria-hidden="true"><line x1="1" y1="7" x2="19" y2="7" stroke="#6b6b6b" stroke-dasharray="3 3"/></svg>lock: facing the light from inside this line, it drives at it</li>
+      <li><svg viewBox="0 0 20 14" aria-hidden="true"><line x1="1" y1="7" x2="19" y2="7" stroke="#6b6b6b"/></svg>dazzle: inside this line it swerves away. The line shrinks as the battery runs down</li>
+      <li><svg viewBox="0 0 20 14" aria-hidden="true"><line x1="1" y1="10" x2="19" y2="4" stroke="#0000ee" stroke-opacity=".35" stroke-width="3.5" stroke-linecap="round"/><line x1="1" y1="10" x2="19" y2="4" stroke="#111" stroke-opacity=".5" stroke-width=".8"/></svg>trail, blue where the pilot lamp was lit</li>
+    </ul>
     <figcaption>drag a tortoise, lamp or block to move it. tap empty floor to add a lamp or a block, or set erase to remove one. blue strokes mark where the pilot lamp was lit, the trace Walter's open-shutter photographs recorded.</figcaption>
   </figure>
 
