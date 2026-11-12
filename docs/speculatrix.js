@@ -210,6 +210,21 @@
       return 1 - Math.exp(-SENSE_GAIN * total);
     }
 
+    // How bright the room is at (x, y): the reading a photocell there would
+    // get facing each lamp and the hutch head-on, through the same
+    // saturating response as sense(). Pilot lamps and the mirror are left
+    // out, since they move. The page draws this as the light in the room.
+    fieldAt(x, y) {
+      let total = 0;
+      const add = (s) => {
+        const dx = s.x - x, dy = s.y - y;
+        total += s.power / (0.04 + dx * dx + dy * dy);
+      };
+      for (const l of this.lamps) add(l);
+      if (this.hutch) add(this.hutch);
+      return 1 - Math.exp(-SENSE_GAIN * total);
+    }
+
     collide(a) {
       let hit = false;
       const r = BODY_R;
@@ -295,7 +310,7 @@
     },
   };
 
-  const api = { Mode, defaultParams, Tortoise, Explorer, mix, World, Agent, scenes, BODY_R };
+  const api = { Mode, defaultParams, Tortoise, Explorer, mix, World, Agent, scenes, BODY_R, FOV_POW };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Speculatrix = api;
 })(typeof self !== "undefined" ? self : this);
