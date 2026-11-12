@@ -10,6 +10,7 @@
   var css = getComputedStyle(document.documentElement);
   var INK = css.getPropertyValue("--ink").trim() || "#111", INK2 = css.getPropertyValue("--ink-2").trim() || "#6b6b6b";
   var RULE = css.getPropertyValue("--rule").trim() || "#d4d4d4", PAPER2 = css.getPropertyValue("--paper-2").trim() || "#f4f4f4";
+  var PAPER = css.getPropertyValue("--paper").trim() || "#ffffff";
   var ACCENT = css.getPropertyValue("--accent").trim() || "#0000ee";
   var FONT = "12px " + getComputedStyle(document.body).fontFamily;
 
@@ -124,9 +125,10 @@
 
   function drawLamp(l) {
     var cx = sx(l.x), cy = sy(l.y), r = Math.max(3, 0.03 * view.s);
-    sctx.strokeStyle = INK2; sctx.lineWidth = 1;
-    sctx.beginPath(); sctx.arc(cx, cy, r * 3.2 * Math.sqrt(l.power), 0, 7); sctx.stroke();
+    sctx.fillStyle = PAPER; sctx.strokeStyle = INK2; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.arc(cx, cy, r * 3.2 * Math.sqrt(l.power), 0, 7); sctx.fill(); sctx.stroke();
     sctx.fillStyle = INK; sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.fill();
+    sctx.fillStyle = INK2; sctx.font = FONT; sctx.fillText("lamp", cx + r * 3.2 * Math.sqrt(l.power) + 5, cy + 4);
   }
   function drawHutch(hc) {
     var cx = sx(hc.x), cy = sy(hc.y), r = hc.r * view.s;
@@ -143,14 +145,45 @@
   function drawMirror(m) {
     sctx.strokeStyle = INK; sctx.lineWidth = 2; sctx.lineCap = "butt";
     sctx.beginPath(); sctx.moveTo(sx(m.ax), sy(m.ay)); sctx.lineTo(sx(m.bx), sy(m.by)); sctx.stroke();
+    sctx.fillStyle = INK2; sctx.font = FONT; sctx.textAlign = "center";
+    sctx.fillText("mirror", sx((m.ax + m.bx) / 2), sy((m.ay + m.by) / 2) + 16); sctx.textAlign = "start";
   }
+  // Half-width of the photocell's view: the angle at which its shroud
+  // passes half the light (cos^n = 1/2).
+  var VIEW_HALF = Math.acos(Math.pow(0.5, 1 / S.FOV_POW));
   function drawAgent(a) {
-    var cx = sx(a.x), cy = sy(a.y), r = BODY_R * view.s, dir = a.eyeDir();
-    sctx.strokeStyle = INK; sctx.lineWidth = 1;
-    sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.stroke();
-    sctx.beginPath(); sctx.moveTo(cx, cy); sctx.lineTo(cx + Math.cos(dir) * r * 1.5, cy + Math.sin(dir) * r * 1.5); sctx.stroke();
-    if (a.out.pilot) { sctx.fillStyle = ACCENT; sctx.beginPath(); sctx.arc(cx, cy, Math.max(2.5, r * 0.3), 0, 7); sctx.fill(); }
-    sctx.fillStyle = INK2; sctx.font = FONT; sctx.textAlign = "center"; sctx.fillText(a.name.toLowerCase(), cx, cy - r - 5); sctx.textAlign = "start";
+    var cx = sx(a.x), cy = sy(a.y), r = BODY_R * view.s, dir = a.eyeDir(), mode = a.out.mode;
+    // What the photocell is looking at.
+    sctx.save();
+    sctx.beginPath(); sctx.rect(sx(0), sy(0), world.w * view.s, world.h * view.s); sctx.clip();
+    sctx.fillStyle = INK; sctx.globalAlpha = 0.07;
+    sctx.beginPath(); sctx.moveTo(cx, cy); sctx.arc(cx, cy, Math.max(r * 4, 0.8 * view.s), dir - VIEW_HALF, dir + VIEW_HALF); sctx.closePath(); sctx.fill();
+    sctx.restore();
+    // The shell, drawn heavier while it is pressed against something.
+    sctx.fillStyle = PAPER; sctx.strokeStyle = INK; sctx.lineWidth = mode === Mode.Contact ? 2.5 : 1.25;
+    sctx.beginPath(); sctx.arc(cx, cy, r, 0, 7); sctx.fill(); sctx.stroke();
+    sctx.strokeStyle = RULE; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.arc(cx, cy, r * 0.62, 0, 7); sctx.stroke();
+    // The steering column with the photocell on it.
+    var ex = cx + Math.cos(dir) * r * 1.2, ey = cy + Math.sin(dir) * r * 1.2;
+    sctx.strokeStyle = INK; sctx.lineWidth = 1.5;
+    sctx.beginPath(); sctx.moveTo(cx, cy); sctx.lineTo(ex, ey); sctx.stroke();
+    sctx.fillStyle = INK; sctx.beginPath(); sctx.arc(ex, ey, 2.2, 0, 7); sctx.fill();
+    // The pilot lamp, lit only while it scans in the dark.
+    if (a.out.pilot) {
+      sctx.fillStyle = ACCENT; sctx.globalAlpha = 0.18;
+      sctx.beginPath(); sctx.arc(cx, cy, r * 0.62, 0, 7); sctx.fill();
+      sctx.globalAlpha = 1;
+      sctx.beginPath(); sctx.arc(cx, cy, Math.max(2.5, r * 0.28), 0, 7); sctx.fill();
+    } else {
+      sctx.strokeStyle = INK2; sctx.lineWidth = 1;
+      sctx.beginPath(); sctx.arc(cx, cy, Math.max(2.5, r * 0.28), 0, 7); sctx.stroke();
+    }
+    // Name and what it is doing.
+    var ty = cy - r - 7 < sy(0) + 12 ? cy + r + 15 : cy - r - 7;
+    sctx.font = FONT; sctx.textAlign = "center";
+    sctx.fillStyle = INK; sctx.fillText(a.name.toLowerCase() + " · " + mode, cx, ty);
+    sctx.textAlign = "start";
   }
   function paintTrails() {
     if (!state.trails) return;

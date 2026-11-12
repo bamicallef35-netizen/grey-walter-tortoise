@@ -310,7 +310,7 @@
     },
   };
 
-  const api = { Mode, defaultParams, Tortoise, Explorer, mix, World, Agent, scenes, BODY_R };
+  const api = { Mode, defaultParams, Tortoise, Explorer, mix, World, Agent, scenes, BODY_R, FOV_POW };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Speculatrix = api;
 })(typeof self !== "undefined" ? self : this);
