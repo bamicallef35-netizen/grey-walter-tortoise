@@ -17,16 +17,23 @@
   var world = null, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
   var view = { s: 1, ox: 0, oy: 0, W: 0, H: 0 };
 
+  // The light in the room, sampled on a grid and drawn as a halftone. It
+  // only changes when a lamp moves, so it is drawn once into its own canvas.
+  var fieldLayer = document.createElement("canvas"), fctx = fieldLayer.getContext("2d");
+  var field = { dirty: true, cols: 0, rows: 0, v: null };
+
   function buildWorld() {
     world = S.scenes[state.scene]();
     for (var i = 0; i < world.agents.length; i++) world.agents[i].body = state.body;
+    field.dirty = true;
     clearTrails();
   }
   function fit() {
     var r = stage.getBoundingClientRect();
     view.W = r.width; view.H = r.height;
-    [sim, trails].forEach(function (c) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); });
-    sctx.setTransform(dpr, 0, 0, dpr, 0, 0); tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    [sim, trails, fieldLayer].forEach(function (c) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); });
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0); tctx.setTransform(dpr, 0, 0, dpr, 0, 0); fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    field.dirty = true;
     clearTrails();
   }
   function computeView() {
@@ -44,6 +51,77 @@
     sctx.strokeStyle = RULE; sctx.lineWidth = 1;
     sctx.strokeRect(sx(0) + 0.5, sy(0) + 0.5, world.w * view.s, world.h * view.s);
   }
+  // Sample the room's light on a grid of nodes about 14 px apart.
+  function sampleField() {
+    var cols = Math.max(8, Math.round(world.w * view.s / 14)), rows = Math.max(6, Math.round(cols * world.h / world.w));
+    var v = new Float32Array((cols + 1) * (rows + 1));
+    for (var j = 0; j <= rows; j++) for (var i = 0; i <= cols; i++) {
+      v[j * (cols + 1) + i] = world.fieldAt(i * world.w / cols, j * world.h / rows);
+    }
+    field.cols = cols; field.rows = rows; field.v = v;
+  }
+  function nodeX(i) { return sx(i * world.w / field.cols); }
+  function nodeY(j) { return sy(j * world.h / field.rows); }
+  function paintField() {
+    fctx.clearRect(0, 0, view.W, view.H);
+    var cell = world.w * view.s / field.cols, rmax = cell * 0.36;
+    fctx.fillStyle = INK;
+    for (var j = 0; j <= field.rows; j++) for (var i = 0; i <= field.cols; i++) {
+      var val = field.v[j * (field.cols + 1) + i];
+      if (val < 0.01) continue;
+      fctx.globalAlpha = 0.05 + 0.09 * val;
+      fctx.beginPath(); fctx.arc(nodeX(i), nodeY(j), rmax * Math.sqrt(val), 0, 7); fctx.fill();
+    }
+    fctx.globalAlpha = 1;
+  }
+
+  // Marching squares: the line where the room's light crosses `level`,
+  // returned as screen-space segments [x1, y1, x2, y2, ...].
+  function contour(level) {
+    var out = [], c1 = field.cols + 1, v = field.v;
+    function lerp(a, b, va, vb) { return a + (b - a) * (level - va) / (vb - va); }
+    for (var j = 0; j < field.rows; j++) for (var i = 0; i < field.cols; i++) {
+      var a = v[j * c1 + i], b = v[j * c1 + i + 1], c = v[(j + 1) * c1 + i + 1], d = v[(j + 1) * c1 + i];
+      var x0 = nodeX(i), x1 = nodeX(i + 1), y0 = nodeY(j), y1 = nodeY(j + 1), p = [];
+      if ((a >= level) !== (b >= level)) p.push(lerp(x0, x1, a, b), y0);   // top
+      if ((b >= level) !== (c >= level)) p.push(x1, lerp(y0, y1, b, c));   // right
+      if ((d >= level) !== (c >= level)) p.push(lerp(x0, x1, d, c), y1);   // bottom
+      if ((a >= level) !== (d >= level)) p.push(x0, lerp(y0, y1, a, d));   // left
+      if (p.length === 4) out.push(p[0], p[1], p[2], p[3]);
+      else if (p.length === 8) {
+        // Saddle: pair the crossings according to the value at the centre.
+        if ((a + b + c + d) / 4 >= level === a >= level) out.push(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+        else out.push(p[0], p[1], p[6], p[7], p[2], p[3], p[4], p[5]);
+      }
+    }
+    return out;
+  }
+  function drawContour(level, dash, label) {
+    if (!(level < 1)) return;
+    var seg = contour(level);
+    if (!seg.length) return;
+    sctx.strokeStyle = INK2; sctx.lineWidth = 1; sctx.setLineDash(dash);
+    sctx.beginPath();
+    var top = 0;
+    for (var k = 0; k < seg.length; k += 4) {
+      sctx.moveTo(seg[k], seg[k + 1]); sctx.lineTo(seg[k + 2], seg[k + 3]);
+      if (seg[k + 1] < seg[top + 1]) top = k;
+    }
+    sctx.stroke(); sctx.setLineDash([]);
+    var lx = seg[top], ly = seg[top + 1];
+    sctx.font = FONT; sctx.fillStyle = INK2; sctx.textAlign = "center";
+    sctx.fillText(label, lx, ly < sy(0) + 16 ? ly + 14 : ly - 5); sctx.textAlign = "start";
+  }
+  // The two rings that explain the behaviour: inside "lock" a tortoise facing
+  // the lamp drives at it; inside "dazzle" it swerves away. The dazzle ring
+  // follows the first tortoise's battery, so it shrinks as the battery runs down.
+  function drawRings() {
+    var a = world.agents[0];
+    if (!a) return;
+    drawContour(a.brain.p.lock_level, [3, 3], "lock");
+    drawContour(a.brain.dazzleThreshold(a.battery), [], "dazzle");
+  }
+
   function drawLamp(l) {
     var cx = sx(l.x), cy = sy(l.y), r = Math.max(3, 0.03 * view.s);
     sctx.strokeStyle = INK2; sctx.lineWidth = 1;
@@ -108,6 +186,9 @@
       while (simDt > 1e-4) { var h = Math.min(0.02, simDt); world.step(h); simDt -= h; paintTrails(); }
     }
     drawRoom();
+    if (field.dirty) { sampleField(); paintField(); field.dirty = false; }
+    sctx.drawImage(fieldLayer, 0, 0, view.W, view.H);
+    drawRings();
     if (world.mirror) drawMirror(world.mirror);
     world.obstacles.forEach(drawObstacle);
     if (world.hutch) drawHutch(world.hutch);
@@ -147,6 +228,7 @@
     var r = stage.getBoundingClientRect(), p = toWorld(e.clientX - r.left, e.clientY - r.top);
     if (p.x < 0.05 || p.x > world.w - 0.05 || p.y < 0.05 || p.y > world.h - 0.05) return;
     world.lamps.push({ x: p.x, y: p.y, power: 1 });
+    field.dirty = true;
   });
   window.addEventListener("resize", fit);
   buildWorld(); fit(); requestAnimationFrame(frame);
