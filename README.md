@@ -22,6 +22,17 @@ This repository models that machine three ways that stay in step with each other
 
 `make test` runs 1,115 behavioural checks; `make parity` runs 14,179 cross-checks between the firmware model and the browser model. Neither is decoration. The claim that "the simulation is the robot" only holds if something enforces it, so a test does.
 
+## Try the simulation
+
+[Open it here](https://bamicallef35-netizen.github.io/grey-walter-tortoise/). Each scene shows one of Walter's behaviours:
+
+- **lamp**: Elsie crosses a room with two obstacles in it to reach a lamp. The blue bursts in her trail are the pilot lamp flashing on during each scan.
+- **mirror**: Elsie meets her own reflection. Her pilot lamp goes out as soon as she sees it, so she loses the light, scans again and catches it again. This is Walter's mirror dance.
+- **pair**: Elmer and Elsie see each other's pilot lamps and dance together.
+- **hutch**: a bright charging hutch and a battery already running down. At first the hutch dazzles her. As the battery drains, its dazzle ring shrinks until she can drive in and dock, usually within a minute.
+
+You can drag a tortoise, a lamp, a block or the hutch. Tapping empty floor adds a lamp or a block. Under the room, a panel shows each tortoise's mode with a sentence on what it means. Its light gauge marks the lock and dazzle thresholds, so you can see which one a mode change crossed.
+
 ## The behaviour
 
 Walter's circuit settles into a handful of regimes depending on how much light the photocell sees and whether the shell is touched. The model names them:
@@ -51,6 +62,7 @@ test/                test_speculatrix.cpp 1,115 unit checks
                      parity.js            14,179 C++/JS cross-checks
                      parity_trace.cpp     the model as a stdin→stdout filter
 docs/                speculatrix.js       the browser port + 2-D world
+                     demo.js              drawing, controls and status panel
                      index.html           the live page
 tools/               trails.js            renders media/trails.svg
                      scenecheck.js        headless behaviour summary
